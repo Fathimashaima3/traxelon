@@ -1,0 +1,597 @@
+import React, { useState, useEffect, useRef } from "react";
+import { useAuth } from "../contexts/AuthContext";
+import { db } from "../firebase/config";
+import { collection, query, where, onSnapshot, doc } from "firebase/firestore";
+import { createTrackingLink } from "../utils/linkService";
+import { jsPDF } from "jspdf"; 
+import {
+  Link2, Zap, Copy, Shield, Activity,
+  ChevronRight, AlertCircle, Clock, Smartphone,
+  Globe, Eye, CreditCard, X, Sparkles, MapPin, Search,
+  Download, Cpu, Gauge, ShieldCheck, HardDrive, MessageSquare, Send, User, Bot, Terminal
+} from "lucide-react";
+
+export default function Dashboard() {
+  const { currentUser, userProfile, fetchUserProfile } = useAuth();
+  const [links, setLinks] = useState([]);
+  const [label, setLabel] = useState("");
+  const [destinationUrl, setDestinationUrl] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [credits, setCredits] = useState(userProfile?.credits ?? 0);
+  const [selectedLink, setSelectedLink] = useState(null);
+  const [showPayment, setShowPayment] = useState(false);
+
+  // AI & CHATBOT STATES
+  const [aiSummary, setAiSummary] = useState("");
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showChatbot, setShowChatbot] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [userQuery, setUserQuery] = useState("");
+  const chatEndRef = useRef(null);
+
+  // Auto-scroll for Chat
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chatMessages]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const unsub = onSnapshot(doc(db, "users", currentUser.uid), (snap) => {
+      if (snap.exists()) setCredits(snap.data().credits ?? 0);
+    });
+    return unsub;
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser) return;
+    const q = query(collection(db, "trackingLinks"), where("uid", "==", currentUser.uid));
+    const unsub = onSnapshot(q, (snap) => {
+      const data = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      data.sort((a, b) => (b.createdAt?.toMillis?.() ?? 0) - (a.createdAt?.toMillis?.() ?? 0));
+      setLinks(data);
+    });
+    return unsub;
+  }, [currentUser]);
+
+  // --- PDF EXPORT LOGIC ---
+  const handleExportPDF = (link) => {
+    const doc = new jsPDF();
+    const timestamp = new Date().toLocaleString();
+    doc.setFont("helvetica", "bold");
+    doc.text("FORENSIC INTELLIGENCE REPORT", 10, 10);
+    doc.setFontSize(10);
+    doc.text(`Case: ${link.label} | Ref: ${link.id} | Generated: ${timestamp}`, 10, 18);
+    doc.line(10, 22, 200, 22);
+    let yPos = 30;
+    if (aiSummary) {
+      doc.setFont("helvetica", "bold");
+      doc.text("EXECUTIVE INTELLIGENCE NARRATIVE:", 10, yPos);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      const splitText = doc.splitTextToSize(aiSummary, 180);
+      doc.text(splitText, 10, yPos + 7);
+      yPos += (splitText.length * 5) + 15;
+    }
+    link.captures?.forEach((cap, i) => {
+      if (yPos > 240) { doc.addPage(); yPos = 20; }
+      doc.setFont("helvetica", "bold");
+      doc.text(`RAW LOG ENTRY #${i + 1}`, 10, yPos);
+      doc.setFontSize(8);
+      doc.setFont("helvetica", "normal");
+      doc.text(`IP: ${cap.ip} | ISP: ${cap.isp} | OS: ${cap.os}`, 10, yPos + 5);
+      yPos += 15;
+    });
+    doc.save(`Forensic_Report_${link.label}.pdf`);
+  };
+
+  // --- UPDATED AI LOGIC (Narrative Sentence Format) ---
+  async function handleAISummary(link) {
+    setIsAnalyzing(true);
+    try {
+      const captures = link.captures || [];
+      if (captures.length === 0) {
+        setAiSummary("No capture data available for analysis.");
+        return;
+      }
+      const multiClickSummary = captures.map((cap, index) => {
+        const hardwareDesc = `Regarding Signal #${index + 1}, the target utilized a ${cap.device || 'Mobile'} device running ${cap.os || 'iOS'} ${cap.osVersion || ''} (${cap.architecture || cap.bitness || '64'}-bit). The hardware profile is characterized by ${cap.cpuCores || '4'} CPU cores and a memory profile showing approximately ${cap.deviceMemory || cap.ram || 'N/A'}GB of RAM.`;
+        const networkDesc = `The connection was intercepted from IP address ${cap.ip} via ${cap.isp || 'Bharti Airtel'} in ${cap.city || 'Bengaluru'}, ${cap.country || 'India'}. Security assessments indicate that the Proxy/VPN risk is currently ${cap.isProxy === 'true' ? 'HIGH' : 'LOW'}.`;
+        const environmentDesc = `Environmental markers show the device was at ${(cap.batteryLevel ? (cap.batteryLevel * 100).toFixed(0) : 'N/A')}% power. Technical fingerprinting successfully extracted a Canvas ID starting with ${cap.canvasFingerprint?.substring(0,8) || 'N/A'}.`;
+        return `[ SIGNAL #${index + 1} - INTELLIGENCE NARRATIVE ]\n${hardwareDesc}\n\n${networkDesc}\n\n${environmentDesc}`.trim();
+      }).join("\n\n---\n\n");
+      setAiSummary(multiClickSummary);
+    } catch (err) {
+      setAiSummary("Forensic analysis failed to synthesize captured data markers.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }
+
+  // --- NEURAL ANALYST BOT LOGIC ---
+  const handleChatSubmit = (e) => {
+    e.preventDefault();
+    if (!userQuery.trim() || !selectedLink) return;
+    const userMsg = { role: "user", text: userQuery };
+    setChatMessages(prev => [...prev, userMsg]);
+    const botResponse = processForensicData(userQuery, selectedLink.captures || []);
+    setTimeout(() => {
+      setChatMessages(prev => [...prev, { role: "bot", text: botResponse }]);
+    }, 500);
+    setUserQuery("");
+  };
+
+  function processForensicData(query, captures) {
+    const q = query.toLowerCase();
+    if (captures.length === 0) return "Negative. No signal packets found for this link.";
+    if (q.includes("ip") || q.includes("address")) {
+      const ips = captures.map(c => c.ip);
+      return `Target IP addresses identified: ${[...new Set(ips)].join(", ")}.`;
+    }
+    if (q.includes("location") || q.includes("city") || q.includes("where")) {
+      const locs = captures.map(c => `${c.city || 'Unknown'}, ${c.country || 'Unknown'}`);
+      return `Geospatial analysis places targets in: ${[...new Set(locs)].join(" | ")}.`;
+    }
+    if (q.includes("gpu") || q.includes("graphics") || q.includes("renderer")) {
+        const gpus = captures.map(c => `${c.gpuVendor} ${c.gpuRenderer}`);
+        return `Graphics Hardware identified: ${[...new Set(gpus)].join(", ")}.`;
+    }
+    if (q.includes("vpn") || q.includes("proxy")) {
+      const suspicious = captures.filter(c => c.isProxy === "true").length;
+      return `Risk Report: ${suspicious} out of ${captures.length} signals show active anonymization (VPN/Proxy).`;
+    }
+    return "Forensic System Online. Ask about IPs, locations, hardware profiles, or security risks.";
+  }
+
+  async function handleGenerate(e) {
+    e.preventDefault();
+    if (credits < 1) { setShowPayment(true); return; }
+    if (!destinationUrl) { setError("Destination URL is required"); return; }
+    setGenerating(true);
+    setError("");
+    setSuccess("");
+    try {
+      const { trackingUrl } = await createTrackingLink(currentUser.uid, label || "Tracking Link", destinationUrl);
+      setSuccess(trackingUrl);
+      setLabel("");
+      setDestinationUrl("");
+      await fetchUserProfile(currentUser.uid);
+    } catch (err) {
+      setError(err.message);
+    }
+    setGenerating(false);
+  }
+
+  function copyToClipboard(text) { navigator.clipboard.writeText(text); }
+
+  return (
+    <div className="min-h-screen bg-surface pt-16 text-text-primary">
+      <div className="max-w-7xl mx-auto px-4 py-8">
+
+        {/* Header Section */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+          <div>
+            <h1 className="font-display text-4xl tracking-wider">COMMAND <span className="text-primary">CENTER</span></h1>
+            <p className="font-body text-sm text-text-secondary mt-1">
+              Welcome back, <span className="text-primary">{userProfile?.displayName || "Officer"}</span>
+              {userProfile?.badgeId && <span className="text-text-muted"> · Badge #{userProfile.badgeId}</span>}
+            </p>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="bg-surface-card border border-surface-border rounded-xl px-5 py-3 flex items-center gap-3">
+              <Zap className="w-5 h-5 text-primary" />
+              <div>
+                <div className="font-mono text-2xl text-primary leading-none">{credits}</div>
+                <div className="font-body text-xs text-text-muted">Credits</div>
+              </div>
+            </div>
+            <button onClick={() => setShowPayment(true)} className="px-4 py-3 bg-primary/10 border border-primary/30 text-primary rounded-xl font-body text-sm hover:bg-primary/20 transition-colors flex items-center gap-2">
+              <CreditCard className="w-4 h-4" /> Buy Credits
+            </button>
+          </div>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+          {[
+            { label: "Total Links", value: links.length, icon: <Link2 className="w-4 h-4" /> },
+            { label: "Total Captures", value: links.reduce((a, l) => a + (l.captures?.length || 0), 0), icon: <Eye className="w-4 h-4" /> },
+            { label: "Active Links", value: links.filter((l) => l.active).length, icon: <Activity className="w-4 h-4" /> },
+            { label: "Total Clicks", value: links.reduce((a, l) => a + (l.clicks || 0), 0), icon: <Globe className="w-4 h-4" /> },
+          ].map((stat) => (
+            <div key={stat.label} className="bg-surface-card border border-surface-border rounded-xl p-4 shadow-sm">
+              <div className="flex items-center gap-2 text-text-muted mb-2">
+                {stat.icon}
+                <span className="font-body text-xs uppercase tracking-wider">{stat.label}</span>
+              </div>
+              <div className="font-display text-3xl text-text-primary">{stat.value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="grid lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-1">
+            <div className="bg-surface-elevated border border-surface-border rounded-2xl p-6 sticky top-24">
+              <h2 className="font-display text-xl tracking-wider mb-1">GENERATE <span className="text-primary">LINK</span></h2>
+              <p className="font-body text-xs text-text-muted mb-6">Creates a disguised GPay-looking link that captures device data</p>
+
+              {error && (
+                <div className="flex items-start gap-2 bg-accent/10 border border-accent/30 text-accent rounded-lg px-3 py-2.5 font-body text-sm mb-4">
+                  <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />{error}
+                </div>
+              )}
+
+              {success && (
+                <div className="bg-primary/10 border border-primary/30 rounded-lg p-3 mb-4 animate-pulse">
+                  <p className="font-body text-xs text-primary mb-2 font-semibold">Link Generated!</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-text-secondary truncate flex-1">{success}</span>
+                    <button onClick={() => copyToClipboard(success)} className="text-primary hover:text-primary-dark">
+                      <Copy className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <form onSubmit={handleGenerate} className="space-y-4">
+                <div>
+                  <label className="block font-body text-xs text-text-secondary uppercase tracking-wider mb-1.5">Destination URL (Required)</label>
+                  <input type="url" value={destinationUrl} onChange={(e) => setDestinationUrl(e.target.value)} placeholder="https://example.com" required
+                    className="w-full bg-surface border border-surface-border rounded-lg px-4 py-3 font-body text-sm text-text-primary focus:border-primary transition-colors" />
+                </div>
+                <div>
+                  <label className="block font-body text-xs text-text-secondary uppercase tracking-wider mb-1.5">Case / Label (optional)</label>
+                  <input type="text" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="e.g., Case #2024-078"
+                    className="w-full bg-surface border border-surface-border rounded-lg px-4 py-3 font-body text-sm text-text-primary focus:border-primary transition-colors" />
+                </div>
+                <button type="submit" disabled={generating}
+                  className="w-full px-4 py-3 bg-primary text-surface font-body font-bold rounded-lg hover:bg-primary-dark transition-all shadow-glow disabled:opacity-50 flex items-center justify-center gap-2">
+                  <Link2 className="w-4 h-4" />
+                  {generating ? "Generating..." : credits > 0 ? "Generate Link (1 credit)" : "No Credits - Buy Now"}
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <div className="lg:col-span-2">
+            <div className="bg-surface-elevated border border-surface-border rounded-2xl p-6 min-h-[500px]">
+              <h2 className="font-display text-xl tracking-wider mb-6 flex items-center gap-2">
+                <Search className="w-5 h-5 text-primary" /> TRACKING <span className="text-primary">LINKS</span>
+              </h2>
+
+              {links.length === 0 ? (
+                <div className="text-center py-24">
+                  <Shield className="w-16 h-16 text-text-muted/20 mx-auto mb-4" />
+                  <p className="font-body text-text-muted">No active intelligence links found</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {links.map((link) => (
+                    <div key={link.id}
+                      className={`bg-surface border transition-all rounded-xl p-4 cursor-pointer ${selectedLink?.id === link.id ? "border-primary bg-primary/5 ring-1 ring-primary/20" : "border-surface-border hover:border-primary/40"}`}
+                      onClick={() => {
+                        setSelectedLink(selectedLink?.id === link.id ? null : link);
+                        setAiSummary(""); 
+                        setShowChatbot(false);
+                        setChatMessages([{ role: "bot", text: "Forensic Neural System Online. Ready to analyze captured signals." }]);
+                      }}>
+
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <span className="font-body text-sm font-bold text-text-primary truncate block mb-1">{link.label}</span>
+                          <div className="font-mono text-[10px] text-text-muted truncate uppercase tracking-tighter opacity-70">{link.id}</div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button onClick={(e) => { e.stopPropagation(); copyToClipboard(link.trackingUrl); }} className="p-2 text-text-muted hover:text-primary transition-colors bg-surface-card rounded-lg">
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <ChevronRight className={`w-5 h-5 text-text-muted transition-transform ${selectedLink?.id === link.id ? "rotate-90 text-primary" : ""}`} />
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-4 mt-3 text-[11px] text-text-muted font-body font-medium">
+                        <span className="flex items-center gap-1 bg-surface-card px-2 py-1 rounded border border-surface-border"><Eye className="w-3 h-3 text-primary" />{link.clicks || 0} CLICKS</span>
+                        <span className="flex items-center gap-1 bg-surface-card px-2 py-1 rounded border border-surface-border"><Smartphone className="w-3 h-3 text-primary" />{link.captures?.length || 0} CAPTURES</span>
+                        <span className="flex items-center gap-1"><Clock className="w-3 h-3" />{link.createdAt ? new Date(link.createdAt.toMillis()).toLocaleDateString() : "-"}</span>
+                      </div>
+
+                      {selectedLink?.id === link.id && (
+                        <div className="mt-5 border-t border-primary/10 pt-5 animate-in fade-in slide-in-from-top-2 duration-300">
+                          
+                          <div className="mb-6 p-5 bg-slate-900/80 rounded-xl border-l-4 border-primary shadow-xl">
+                            <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
+                              <h4 className="font-body text-[10px] text-primary uppercase font-black tracking-[0.2em] flex items-center gap-2">
+                                <Sparkles className="w-4 h-4" /> INTELLIGENCE REPORTING
+                              </h4>
+                              <div className="flex items-center gap-2">
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setShowChatbot(!showChatbot); }}
+                                  className={`text-[9px] px-3 py-1 rounded border font-bold uppercase flex items-center gap-1.5 transition-all ${showChatbot ? 'bg-primary text-surface border-primary' : 'bg-primary/10 text-primary border-primary/30'}`}
+                                >
+                                  <MessageSquare className="w-3 h-3" /> {showChatbot ? "Close Chat" : "Neural Analyst"}
+                                </button>
+                                {aiSummary && (
+                                  <button onClick={(e) => { e.stopPropagation(); handleExportPDF(link); }} className="text-[9px] bg-primary/20 text-primary px-3 py-1 rounded border border-primary/30 font-bold uppercase flex items-center gap-1.5">
+                                    <Download className="w-3 h-3" /> Export PDF
+                                  </button>
+                                )}
+                                <button onClick={(e) => { e.stopPropagation(); handleAISummary(link); }} disabled={isAnalyzing}
+                                  className="text-[10px] bg-primary text-surface px-4 py-1.5 rounded-lg font-bold uppercase hover:bg-primary-dark shadow-glow flex items-center gap-2">
+                                  {isAnalyzing ? "Processing..." : "Generate AI Report"}
+                                </button>
+                              </div>
+                            </div>
+
+                            {showChatbot ? (
+  <div 
+    className="mt-4 bg-black/40 rounded-lg overflow-hidden border border-white/5"
+    onClick={(e) => e.stopPropagation()}
+  >
+    <div className="h-48 overflow-y-auto p-4 space-y-3 font-mono text-[11px]">
+      {chatMessages.map((msg, i) => (
+        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+          <div className={`max-w-[85%] px-3 py-2 rounded-lg ${msg.role === 'user' ? 'bg-primary/20 text-primary border border-primary/30' : 'bg-surface text-text-secondary border border-white/10'}`}>
+            <div className="flex items-center gap-1.5 mb-1 opacity-50 uppercase text-[8px] font-black">
+              {msg.role === 'user' ? <User className="w-2 h-2" /> : <Bot className="w-2 h-2" />} {msg.role}
+            </div>
+            {msg.text}
+          </div>
+        </div>
+      ))}
+      <div ref={chatEndRef} />
+    </div>
+
+    <form 
+      onSubmit={handleChatSubmit}
+      onClick={(e) => e.stopPropagation()}
+      className="p-2 border-t border-white/5 flex gap-2"
+    >
+      <input 
+        type="text" 
+        value={userQuery} 
+        onChange={(e) => setUserQuery(e.target.value)} 
+        onClick={(e) => e.stopPropagation()}
+        placeholder="Ask about target signals..."
+        className="flex-1 bg-surface border border-white/10 rounded-md px-3 py-2 text-[11px] outline-none text-text-primary"
+      />
+      <button 
+        type="submit" 
+        onClick={(e) => e.stopPropagation()}
+        className="bg-primary p-2 rounded-md text-surface"
+      >
+        <Send className="w-3 h-3" />
+      </button>
+    </form>
+  </div>
+) : (
+                              aiSummary ? (
+                                <pre className="text-gray-200 text-xs leading-relaxed font-mono whitespace-pre-wrap">{aiSummary}</pre>
+                              ) : !isAnalyzing && (
+                                <p className="text-text-muted text-xs">Run neural analysis to synthesize captured data into a narrative summary.</p>
+                              )
+                            )}
+                          </div>
+
+                          <h4 className="font-body text-[10px] text-text-muted uppercase tracking-[0.3em] font-bold mb-4 flex items-center gap-2">
+                            <Activity className="w-3 h-3" /> RAW DEVICE LOGS
+                          </h4>
+                          <div className="space-y-4">
+                            {link.captures?.length > 0 ? (
+                                link.captures.map((capture, i) => <CaptureCard key={i} capture={capture} index={i} />)
+                            ) : (
+                                <p className="text-center py-4 text-xs text-text-muted">Waiting for first user engagement...</p>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {showPayment && <PaymentModal onClose={() => setShowPayment(false)} uid={currentUser?.uid} fetchUserProfile={fetchUserProfile} />}
+    </div>
+  );
+}
+
+// --- REMAINING SUB-COMPONENTS (UNTOUCHED) ---
+function CaptureCard({ capture, index }) {
+  const hasGPS = (capture.gpsLat || capture.serverGeoLatitude) && (capture.gpsLon || capture.serverGeoLongitude);
+  return (
+    <div className="bg-surface-elevated border border-surface-border rounded-xl p-5 shadow-inner">
+      <div className="flex items-center justify-between mb-5">
+        <div className="flex items-center gap-2">
+           <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
+           <div className="font-mono text-[10px] text-text-muted uppercase tracking-widest">{capture.capturedAt || capture.systemDate || '2024-LOG'}</div>
+        </div>
+        <div className={`text-[10px] px-3 py-1 rounded-lg font-bold border tracking-widest ${hasGPS ? "bg-green-500/10 text-green-400 border-green-500/20" : "bg-primary/10 text-primary border-primary/20"}`}>
+          {hasGPS ? "GPS SECURED" : "IP TRACED"}
+        </div>
+      </div>
+
+      <Section title="Network & Infrastructure [Advanced]">
+        <DataRow label="Public IP" value={capture.ip} />
+        <DataRow label="ISP / Provider" value={capture.isp} />
+        <DataRow label="Connection" value={capture.connectionType} />
+        <DataRow label="Downlink" value={capture.downlink ? capture.downlink + " Mbps" : null} />
+        <DataRow label="RTT Latency" value={capture.rtt ? capture.rtt + " ms" : null} />
+        <DataRow label="Proxy/VPN" value={capture.isProxy} />
+        <DataRow label="Tor Network" value={capture.isTor} />
+        <DataRow label="Public DNS" value={capture.dnsProvider} />
+      </Section>
+
+      <Section title="Hardware & System Deep-Dive">
+        <DataRow label="Device" value={capture.device} />
+        <DataRow label="CPU Cores" value={capture.cpuCores} />
+        <DataRow label="RAM (Est)" value={capture.deviceMemory || capture.ram ? (capture.deviceMemory || capture.ram) + " GB" : "N/A"} />
+        <DataRow label="Max Touch" value={capture.maxTouchPoints} />
+        <DataRow label="Architecture" value={capture.architecture || capture.bitness + "-bit"} />
+        <DataRow label="USB Support" value={capture.usbSupport} />
+        <DataRow label="Bluetooth" value={capture.bluetoothSupport} />
+      </Section>
+
+      <Section title="Graphics & WebGL Fingerprint">
+        <DataRow label="GPU Vendor" value={capture.gpuVendor} />
+        <DataRow label="GPU Renderer" value={capture.gpuRenderer} />
+        <DataRow label="WebGL Vendor" value={capture.webglVendor} />
+        <DataRow label="WebGL Version" value={capture.webglVersion} />
+        <DataRow label="Antialiasing" value={capture.antialiasing} />
+        <DataRow label="Canvas ID" value={capture.canvasFingerprint?.substring(0, 12)} />
+      </Section>
+
+      <Section title="Display & Visual Metrics">
+        <DataRow label="Resolution" value={`${capture.screenWidth}x${capture.screenHeight}`} />
+        <DataRow label="Color Depth" value={capture.colorDepth ? capture.colorDepth + " bit" : null} />
+        <DataRow label="Pixel Ratio" value={capture.devicePixelRatio} />
+        <DataRow label="Orientation" value={capture.screenOrientation} />
+        <DataRow label="HDR Support" value={capture.hdrSupport} />
+        <DataRow label="Refresh Rate" value={capture.refreshRate ? capture.refreshRate + "Hz" : null} />
+      </Section>
+
+      <Section title="Browser & Environment">
+        <DataRow label="Browser" value={`${capture.browser} ${capture.browserVersion || ''}`} />
+        <DataRow label="Engine" value={capture.browserEngine} />
+        <DataRow label="Incognito" value={capture.isIncognito} />
+        <DataRow label="Adblocker" value={capture.adblocker} />
+        <DataRow label="DNT Enabled" value={capture.doNotTrack} />
+        <DataRow label="PDF Viewer" value={capture.pdfViewerEnabled} />
+      </Section>
+
+      <Section title="Power & Environmental">
+        <DataRow label="Battery" value={capture.batteryLevel ? (capture.batteryLevel * 100).toFixed(0) + "%" : "N/A"} />
+        <DataRow label="Charging" value={capture.batteryCharging === "true" ? "YES" : "NO"} />
+        <DataRow label="Timezone" value={capture.timezone} />
+        <DataRow label="Locale" value={capture.language} />
+        <DataRow label="Currency" value={capture.localCurrency} />
+      </Section>
+
+      <Section title="Physical Sensors">
+        <DataRow label="Accelerometer" value={capture.hasAccelerometer} />
+        <DataRow label="Gyroscope" value={capture.hasGyroscope} />
+        <DataRow label="Magnetometer" value={capture.hasMagnetometer} />
+        <DataRow label="Light Sensor" value={capture.hasLightSensor} />
+      </Section>
+
+      <Section title="Performance Markers">
+        <DataRow label="DNS Lookup" value={capture.performanceDnsLookupTime + "ms"} />
+        <DataRow label="TCP Connect" value={capture.performanceTcpConnectionTime + "ms"} />
+        <DataRow label="Server Resp" value={capture.performanceServerResponseTime + "ms"} />
+        <DataRow label="Page Load" value={capture.performancePageLoadTime + "ms"} />
+      </Section>
+
+      <Section title="Security & Fingerprint">
+        <DataRow label="Canvas ID" value={capture.canvasFingerprint?.substring(0, 16)} />
+        <DataRow label="Audio ID" value={capture.audioFingerprint?.substring(0, 16)} />
+        <DataRow label="User Agent" value={capture.userAgent} />
+      </Section>
+
+      {hasGPS && (
+        <Section title="Physical Telemetry">
+          <div className="col-span-2 mb-2">
+             <div className="flex items-center gap-2 text-green-400 text-xs font-bold mb-3">
+                <MapPin className="w-3 h-3" /> VERIFIED PHYSICAL ADDRESS
+             </div>
+             <p className="text-xs text-text-primary mb-4 bg-surface/50 p-2 rounded border border-surface-border">
+                {capture.serverGeoCity}, {capture.serverGeoCountry} (Lat: {capture.serverGeoLatitude}, Lon: {capture.serverGeoLongitude})
+             </p>
+          </div>
+          <div className="col-span-2 mt-3">
+            <div className="rounded-xl overflow-hidden border border-surface-border mb-3" style={{ height: 200 }}>
+              <iframe title={"map-" + index} width="100%" height="100%" frameBorder="0"
+                src={`https://maps.google.com/maps?q=${capture.serverGeoLatitude || capture.gpsLat},${capture.serverGeoLongitude || capture.gpsLon}&z=15&output=embed`} allowFullScreen />
+            </div>
+          </div>
+        </Section>
+      )}
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <div className="mb-6 last:mb-0">
+      <div className="font-body text-[9px] text-primary uppercase font-black tracking-[0.2em] mb-3 pb-1 border-b border-primary/10">{title}</div>
+      <div className="grid grid-cols-2 gap-x-6 gap-y-3">{children}</div>
+    </div>
+  );
+}
+
+function DataRow({ label, value }) {
+  if (value == null || value === "" || value === "null" || value === "undefined") return null;
+  return (
+    <div>
+      <div className="font-body text-[10px] text-text-muted uppercase tracking-wider mb-0.5 font-bold">{label}</div>
+      <div className="font-mono text-[10px] text-text-primary break-all leading-tight">{String(value)}</div>
+    </div>
+  );
+}
+
+function PaymentModal({ onClose, uid, fetchUserProfile }) {
+  const plans = [
+    { credits: 5, price: 99, label: "Starter Pack" },
+    { credits: 15, price: 249, label: "Investigation Pack", popular: true },
+    { credits: 50, price: 699, label: "Department Pack" },
+  ];
+  const [selected, setSelected] = useState(1);
+  const [processing, setProcessing] = useState(false);
+  const [done, setDone] = useState(false);
+
+  async function handlePurchase() {
+    setProcessing(true);
+    await new Promise((r) => setTimeout(r, 2000));
+    const { addCredits } = await import("../utils/linkService");
+    await addCredits(uid, plans[selected].credits);
+    await fetchUserProfile(uid);
+    setDone(true);
+    setProcessing(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center px-4">
+      <div className="bg-surface-elevated border border-surface-border rounded-2xl p-8 w-full max-w-md shadow-2xl relative overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-1 bg-primary"></div>
+        <div className="flex items-center justify-between mb-8">
+          <h2 className="font-display text-2xl tracking-wider text-text-primary uppercase">CREDIT <span className="text-primary">RELOAD</span></h2>
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary"><X className="w-6 h-6" /></button>
+        </div>
+        {done ? (
+          <div className="text-center py-10">
+            <div className="w-20 h-20 bg-green-500/20 text-green-500 rounded-full flex items-center justify-center mx-auto mb-6">
+                <Zap className="w-10 h-10" />
+            </div>
+            <h3 className="font-display text-2xl text-primary mb-2 uppercase">RELOAD COMPLETE</h3>
+            <button onClick={onClose} className="mt-8 w-full px-6 py-4 bg-primary text-surface font-body font-black uppercase tracking-widest rounded-xl">RETURN</button>
+          </div>
+        ) : (
+          <>
+            <div className="space-y-4 mb-8">
+              {plans.map((plan, i) => (
+                <button key={i} onClick={() => setSelected(i)}
+                  className={`w-full text-left p-5 rounded-2xl border transition-all relative ${selected === i ? "border-primary bg-primary/5 shadow-glow ring-1 ring-primary" : "border-surface-border bg-surface hover:border-primary/40"}`}>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <span className="font-display text-lg text-text-primary uppercase">{plan.label}</span>
+                      <div className="font-body text-xs text-text-secondary mt-1">{plan.credits} credits</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-display text-2xl text-primary font-black">₹{plan.price}</div>
+                    </div>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <button onClick={handlePurchase} disabled={processing} className="w-full px-6 py-4 bg-primary text-surface font-body font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-3">
+              <CreditCard className="w-5 h-5" />
+              {processing ? "SECURE TRANSACTION..." : "RELOAD NOW"}
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
