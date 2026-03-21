@@ -87,27 +87,69 @@ export default function Dashboard() {
   };
 
   // --- UPDATED AI LOGIC (Narrative Sentence Format) ---
-  async function handleAISummary(link) {
-    setIsAnalyzing(true);
-    try {
-      const captures = link.captures || [];
-      if (captures.length === 0) {
-        setAiSummary("No capture data available for analysis.");
-        return;
-      }
-      const multiClickSummary = captures.map((cap, index) => {
-        const hardwareDesc = `Regarding Signal #${index + 1}, the target utilized a ${cap.device || 'Mobile'} device running ${cap.os || 'iOS'} ${cap.osVersion || ''} (${cap.architecture || cap.bitness || '64'}-bit). The hardware profile is characterized by ${cap.cpuCores || '4'} CPU cores and a memory profile showing approximately ${cap.deviceMemory || cap.ram || 'N/A'}GB of RAM.`;
-        const networkDesc = `The connection was intercepted from IP address ${cap.ip} via ${cap.isp || 'Bharti Airtel'} in ${cap.city || 'Bengaluru'}, ${cap.country || 'India'}. Security assessments indicate that the Proxy/VPN risk is currently ${cap.isProxy === 'true' ? 'HIGH' : 'LOW'}.`;
-        const environmentDesc = `Environmental markers show the device was at ${(cap.batteryLevel ? (cap.batteryLevel * 100).toFixed(0) : 'N/A')}% power. Technical fingerprinting successfully extracted a Canvas ID starting with ${cap.canvasFingerprint?.substring(0,8) || 'N/A'}.`;
-        return `[ SIGNAL #${index + 1} - INTELLIGENCE NARRATIVE ]\n${hardwareDesc}\n\n${networkDesc}\n\n${environmentDesc}`.trim();
-      }).join("\n\n---\n\n");
-      setAiSummary(multiClickSummary);
-    } catch (err) {
-      setAiSummary("Forensic analysis failed to synthesize captured data markers.");
-    } finally {
-      setIsAnalyzing(false);
+  // --- FINAL AI LOGIC (REAL VALUES + CLEAN FALLBACKS) ---
+async function handleAISummary(link) {
+  setIsAnalyzing(true);
+
+  try {
+    const captures = link.captures || [];
+
+    if (captures.length === 0) {
+      setAiSummary("No capture data available for analysis.");
+      return;
     }
+
+    const summary = captures.map((cap, index) => {
+
+      // ✅ RAM FIX
+      const ramValue = (cap.deviceMemory || cap.ram)
+        ? `${cap.deviceMemory || cap.ram} GB`
+        : "Hardware memory details restricted";
+
+      // ✅ BATTERY FIX (no multiplying again)
+      const batteryValue = (cap.batteryLevel !== null && cap.batteryLevel !== undefined)
+        ? `${cap.batteryLevel}%`
+        : "Battery data not accessible due to browser security restrictions";
+
+      // ✅ GPS + LOCATION FIX
+      const locationValue = (cap.gpsLat && cap.gpsLon)
+        ? `GPS (${cap.gpsLat}, ${cap.gpsLon})`
+        : (cap.city || cap.country)
+          ? `${cap.city || ""} ${cap.country || ""}`.trim()
+          : "GPS unavailable, location estimated via IP";
+
+      // ✅ ISP fallback
+      const ispValue = cap.isp || "Network provider not disclosed";
+
+      // ✅ IP fallback
+      const ipValue = cap.ip || "IP not captured";
+
+      return `
+[SIGNAL ${index + 1} - INTELLIGENCE REPORT]
+
+Device: ${cap.device || "Unknown device"}
+Operating System: ${cap.os || "Unknown OS"}
+CPU Cores: ${cap.cpuCores || "Unknown"}
+RAM: ${ramValue}
+
+IP Address: ${ipValue}
+ISP: ${ispValue}
+Location: ${locationValue}
+
+Battery Status: ${batteryValue}
+Canvas Fingerprint: ${cap.canvasFingerprint?.substring(0, 8) || "Unavailable"}
+      `.trim();
+
+    }).join("\n\n-----------------------------\n\n");
+
+    setAiSummary(summary);
+
+  } catch (err) {
+    setAiSummary("Forensic analysis failed to process captured data.");
+  } finally {
+    setIsAnalyzing(false);
   }
+}
 
   // --- NEURAL ANALYST BOT LOGIC ---
   const handleChatSubmit = (e) => {
@@ -164,7 +206,11 @@ export default function Dashboard() {
   }
 
   function copyToClipboard(text) { navigator.clipboard.writeText(text); }
-
+const handleCopy = (text) => {
+  if (!text) return;
+  navigator.clipboard.writeText(text);
+  alert("Intelligence Narrative copied to clipboard!");
+};
   return (
     <div className="min-h-screen bg-surface pt-16 text-text-primary">
       <div className="max-w-7xl mx-auto px-4 py-8">
@@ -366,8 +412,27 @@ export default function Dashboard() {
   </div>
 ) : (
                               aiSummary ? (
-                                <pre className="text-gray-200 text-xs leading-relaxed font-mono whitespace-pre-wrap">{aiSummary}</pre>
-                              ) : !isAnalyzing && (
+  <div>
+    <div className="flex items-center justify-between mb-2">
+      <h3 className="text-primary font-bold text-xs">
+        INTELLIGENCE NARRATIVE
+      </h3>
+      <button 
+        onClick={(e) => { 
+          e.stopPropagation(); 
+          handleCopy(aiSummary); 
+        }}
+        className="bg-primary hover:bg-primary-dark text-surface text-[10px] py-1 px-3 rounded transition"
+      >
+        Copy Summary
+      </button>
+    </div>
+
+    <pre className="text-gray-200 text-xs leading-relaxed font-mono whitespace-pre-wrap">
+      {aiSummary}
+    </pre>
+  </div>
+) : !isAnalyzing && (
                                 <p className="text-text-muted text-xs">Run neural analysis to synthesize captured data into a narrative summary.</p>
                               )
                             )}

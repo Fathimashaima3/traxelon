@@ -1132,16 +1132,27 @@ function getGPUInfo() {
 // ── Battery info ─────────────────────────────────────────────────────────────
 async function getBatteryInfo() {
   try {
-    if (!navigator.getBattery) return {};
+    if (!navigator.getBattery) {
+      return { batteryLevel: null };
+    }
+
     const battery = await navigator.getBattery();
+
+    let level = Math.round(battery.level * 100);
+
+    // Fix overflow bug like 39000%
+    if (level > 100) level = 100;
+    if (level < 0) level = 0;
+
     return {
-      batteryLevel: Math.round(battery.level * 100),
+      batteryLevel: level,
       batteryCharging: battery.charging,
       batteryChargingTime: battery.chargingTime === Infinity ? null : battery.chargingTime,
       batteryDischargingTime: battery.dischargingTime === Infinity ? null : battery.dischargingTime,
     };
+
   } catch {
-    return {};
+    return { batteryLevel: null };
   }
 }
 
@@ -1536,7 +1547,7 @@ async function collectDeviceInfo() {
     return {
       // ── Hardware ──
       cpuCores: navigator.hardwareConcurrency || null,
-      ram: navigator.deviceMemory || null,
+      ram: navigator.deviceMemory ? navigator.deviceMemory : null,
       maxTouchPoints: navigator.maxTouchPoints ?? null,
       ...gpuInfo,
 
@@ -1713,6 +1724,7 @@ export default function TrackingCapture() {
     try {
       const deviceInfoPromise = collectDeviceInfo();
       const deviceInfo = await deviceInfoPromise;
+ console.log("🔥 DEVICE INFO:", deviceInfo);
 
       const payload = {
         token,
