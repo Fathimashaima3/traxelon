@@ -14,13 +14,15 @@ app.use(cors({
         "http://localhost:3000",
         "http://localhost:5173",
         "https://traxelon-main.vercel.app",
-        "https://traxelon-main-git-thondekai-pranavs-projects-3ac675c8.vercel.app",
-        "https://traxelon-lemon.vercel.app/",
-        "https://traxelon-main-git-thondekai-v2-pranavs-projects-3ac675c8.vercel.app",
-        // Add your Vercel URL here
+        "https://traxelon-lemon.vercel.app",
+        // This is your current URL from the screenshot:
+        "https://traxelon-6cme27m9d-fathimashaima3s-projects.vercel.app",
+        // This allows ANY project under your Vercel account (Best for future updates):
+        /\.fathimashaima3s-projects\.vercel\.app$/ 
     ],
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true,
 }));
 
 app.use(express.json({limit:'10mb'}));
