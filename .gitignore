@@ -30,3 +30,7 @@ serviceAccountKey.json
 
 .vercel
 .env*.local
+backend/env
+.env
+node_modules/
+dist/
