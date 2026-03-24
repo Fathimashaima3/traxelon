@@ -51,12 +51,14 @@ export default function NeuralAnalyst({ captures, selectedLinkName }) {
 
     const latest = data[data.length - 1]; // Focus on the most recent capture
 
-    // 1. RAM / HARDWARE
-    if (q.includes("ram") || q.includes("memory") || q.includes("hardware")) {
+    // 1. RAM / HARDWARE / FINGERPRINT / RESOLUTION
+    if (q.includes("ram") || q.includes("hardware") || q.includes("fingerprint") || q.includes("resolution") || q.includes("device")) {
       const hardwareReport = data.map((c, i) => {
         const ramVal = c.deviceMemory || c.ram;
         const ramDisplay = ramVal ? `${ramVal} GB` : "Access Restricted on this Device";
-        return `Packet #${i + 1}: Device: ${c.device || "Unknown"} | RAM: ${ramDisplay} | OS: ${c.os || "Unknown"}`;
+        // Adding Resolution and Fingerprint details
+        const res = c.screenResolution || "Resolution Restricted";
+        return `Packet #${i + 1}: Device: ${c.device || "Mobile"} | OS: ${c.os || "Unknown"} | RAM: ${ramDisplay} | Screen: ${res}`;
       }).join("\n");
       return `Hardware Fingerprint Analysis:\n${hardwareReport}`;
     }
@@ -74,26 +76,45 @@ export default function NeuralAnalyst({ captures, selectedLinkName }) {
       }));
       return `Geospatial Intelligence Report:\n\n${locationReports.join("\n\n")}`;
     }
-
-    // 3. UPDATED BATTERY LOGIC (Fixes "Restricted" and "3500%" bugs)
-    if (q.includes("battery") || q.includes("power")) {
-      const report = data.map((c, i) => {
-        const rawLevel = parseFloat(c.batteryLevel);
-        let levelDisplay = "Restricted by Device Security";
-        
-        if (!isNaN(rawLevel)) {
-          // If value is 0.35 -> 35%. If value is 35 -> 35%.
-          const normalizedLevel = rawLevel <= 1 && rawLevel > 0 ? Math.round(rawLevel * 100) : Math.round(rawLevel);
-          levelDisplay = `${normalizedLevel}%`;
-        }
-        
-        const chargingStatus = c.batteryCharging === "true" || c.batteryCharging === true ? "Charging" : "Discharging";
-        return `Packet #${i + 1}: ${levelDisplay} [Status: ${chargingStatus}]`;
+// 3. IP & NETWORK (Prioritized for "public ip" or "ip address")
+    if (q.includes("ip") || q.includes("public") || q.includes("network") || q.includes("isp")) {
+      const network = data.map((c, i) => {
+        const provider = c.isp || "Provider details restricted";
+        return `Packet #${i + 1}: [NEURAL REPORT - IP]: ${c.ip || "Hidden"} | ISP: ${provider}`;
       }).join("\n");
+      return `Network Intelligence verified from latest signal packets:\n${network}`;
+    }
+    // 4. UPDATED BATTERY LOGIC (Fixes "Restricted" and "3500%" bugs)
+    if (q.includes("battery") || q.includes("power") || q.includes("charge")) {
+      const report = data.map((c, i) => {
+        // Try to get the level from multiple possible keys
+        const rawValue = c.batteryLevel || c.battery; 
+        const rawLevel = parseFloat(rawValue);
+        
+        // If it's a valid percentage (0.0 to 1.0)
+        if (!isNaN(rawLevel) && rawLevel <= 1 && rawLevel > 0) {
+            return `Packet #${i + 1}: ${(rawLevel * 100).toFixed(0)}% [Status: ${c.batteryCharging === "true" ? "Charging" : "Discharging"}]`;
+        } 
+        
+        // If the database has a whole number (e.g., 85) instead of a decimal (0.85)
+        if (!isNaN(rawLevel) && rawLevel > 1) {
+            return `Packet #${i + 1}: ${rawLevel}% [Status: ${c.batteryCharging === "true" ? "Charging" : "Discharging"}]`;
+        }
+
+        return `Packet #${i + 1}: Restricted by Device Security (Check if Target used Incognito or Private mode)`;
+      }).join("\n");
+      
       return `Power Intelligence Report:\n${report}`;
     }
-
-    // 4. SMART SEARCH (Answers any other specific question about the data)
+// 5. SECURITY / VPN / PROXY
+    if (q.includes("security") || q.includes("proxy") || q.includes("vpn") || q.includes("tor")) {
+      const securityReport = data.map((c, i) => {
+        const isSecure = (c.isProxy === "true" || c.isTor === "true") ? "HIGH RISK (VPN/Proxy Detected)" : "CLEAR (Direct Connection)";
+        return `Packet #${i + 1}: Connection Security: ${isSecure}`;
+      }).join("\n");
+      return `Security Signal Analysis:\n${securityReport}`;
+    }
+    // 6. SMART SEARCH (Answers any other specific question about the data)
     const dataKeys = Object.keys(latest);
     const matchedKey = dataKeys.find(key => q.includes(key.toLowerCase()));
 
