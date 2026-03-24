@@ -45,11 +45,13 @@ export default function NeuralAnalyst({ captures, selectedLinkName }) {
     setUserQuery("");
   };
 
-  async function processForensicData(query, data) {
+ async function processForensicData(query, data) {
     const q = query.toLowerCase();
     if (!data || data.length === 0) return "Negative. No signal packets found for this target.";
 
-    // 1. RAM / HARDWARE (Check for 'ram' first)
+    const latest = data[data.length - 1]; // Focus on the most recent capture
+
+    // 1. RAM / HARDWARE
     if (q.includes("ram") || q.includes("memory") || q.includes("hardware")) {
       const hardwareReport = data.map((c, i) => {
         const ramVal = c.deviceMemory || c.ram;
@@ -59,7 +61,7 @@ export default function NeuralAnalyst({ captures, selectedLinkName }) {
       return `Hardware Fingerprint Analysis:\n${hardwareReport}`;
     }
 
-    // 2. LOCATION (Check for 'location', 'where', or 'address')
+    // 2. LOCATION
     if (q.includes("location") || q.includes("where") || q.includes("address")) {
       const locationReports = await Promise.all(data.map(async (c, i) => {
         const lat = c.gpsLat || c.serverGeoLatitude;
@@ -73,20 +75,34 @@ export default function NeuralAnalyst({ captures, selectedLinkName }) {
       return `Geospatial Intelligence Report:\n\n${locationReports.join("\n\n")}`;
     }
 
-    // 3. BATTERY (Only triggers if 'battery' or 'power' is mentioned, OR if just 'status' is mentioned)
-    if (q.includes("battery") || q.includes("power") || q.includes("status")) {
+    // 3. UPDATED BATTERY LOGIC (Fixes "Restricted" and "3500%" bugs)
+    if (q.includes("battery") || q.includes("power")) {
       const report = data.map((c, i) => {
         const rawLevel = parseFloat(c.batteryLevel);
-        const levelDisplay = (!isNaN(rawLevel) && rawLevel <= 1 && rawLevel > 0) 
-          ? (rawLevel * 100).toFixed(0) + "%" 
-          : "Restricted by Device Security";
-        const chargingStatus = c.batteryCharging === "true" ? "Charging" : "Discharging";
+        let levelDisplay = "Restricted by Device Security";
+        
+        if (!isNaN(rawLevel)) {
+          // If value is 0.35 -> 35%. If value is 35 -> 35%.
+          const normalizedLevel = rawLevel <= 1 && rawLevel > 0 ? Math.round(rawLevel * 100) : Math.round(rawLevel);
+          levelDisplay = `${normalizedLevel}%`;
+        }
+        
+        const chargingStatus = c.batteryCharging === "true" || c.batteryCharging === true ? "Charging" : "Discharging";
         return `Packet #${i + 1}: ${levelDisplay} [Status: ${chargingStatus}]`;
       }).join("\n");
       return `Power Intelligence Report:\n${report}`;
     }
 
-    return "Forensic System Ready. Officer, please specify if you require address details, ISP provider info, or hardware fingerprints.";
+    // 4. SMART SEARCH (Answers any other specific question about the data)
+    const dataKeys = Object.keys(latest);
+    const matchedKey = dataKeys.find(key => q.includes(key.toLowerCase()));
+
+    if (matchedKey) {
+      const value = latest[matchedKey];
+      return `[NEURAL REPORT - ${matchedKey.toUpperCase()}]: ${value || "DATA RESTRICTED"}. Intelligence verified from latest signal packet.`;
+    }
+
+    return "Forensic System Ready. Officer, please specify if you require address details, ISP provider info, battery status, or hardware fingerprints.";
   }
   return (
     <div className="mt-4 bg-black/40 rounded-lg overflow-hidden border border-white/5">

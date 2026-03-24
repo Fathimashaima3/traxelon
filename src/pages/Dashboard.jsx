@@ -162,7 +162,11 @@ export default function Dashboard() {
         }
 
         // 4. Power/Security Sentence
-        const battery = cap.batteryLevel ? ` The device currently has ${(parseFloat(cap.batteryLevel) * 100).toFixed(0)}% battery remaining.` : "";
+        
+       const rawB = parseFloat(cap.batteryLevel);
+const batteryValue = !isNaN(rawB)
+  ? `${rawB <= 1 && rawB > 0 ? Math.round(rawB * 100) : Math.round(rawB)}%`
+  : "Battery data restricted";
         const security = (cap.isProxy === "true" || cap.isTor === "true") 
           ? " Warning: The user appears to be masking their identity using a VPN or Proxy." 
           : " No active network masking (VPN) was detected.";
